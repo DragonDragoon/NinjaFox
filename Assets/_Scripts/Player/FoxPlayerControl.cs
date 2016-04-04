@@ -3,17 +3,27 @@ using System.Collections;
 
 public class FoxPlayerControl : MonoBehaviour {
 
+    public float _baseSpeed = 5f;
+
 	public float _walkSpeed = 0.15f;
 	public float _runSpeed = 1.0f;
 	public float _sprintSpeed = 2.0f;
+    public float _glideSpeed = 1.0f;
+
+    public float _glideFallSpeed = -5.0f;
 
 	public float _turnSmoothing = 3.0f;
+    public float _airTurnSmoothing = 2.0f;
 	public float _aimTurnSmoothing = 15.0f;
 	public float _speedDampTime = 0.1f;
 
 	public float _jumpHeight = 5.0f;
     public float _secondJumpHeight = 3.0f;
-	public float _jumpCooldown = 1.0f;
+	public float _jumpCooldown = 0.3f;
+
+    public float _attackCooldown = 0.5f;
+
+    public bool hasRoot = false;
 
 	private float timeToNextJump = 0;
 	
@@ -27,6 +37,8 @@ public class FoxPlayerControl : MonoBehaviour {
     private int secondJumpBool;
     private int canFirstJumpBool;
     private int canSecondJumpBool;
+    private int glideBool;
+    private int attackInt;
 	private int hFloat;
 	private int vFloat;
 	private int aimBool;
@@ -39,11 +51,11 @@ public class FoxPlayerControl : MonoBehaviour {
 	private float v;
 
 	private bool aim;
-
 	private bool run;
 	private bool sprint;
-
     private bool jump;
+    private bool glide;
+    private bool attack;
 
 	private bool isMoving;
 
@@ -51,6 +63,10 @@ public class FoxPlayerControl : MonoBehaviour {
 
     private bool hasFirstJumped = false;
     private bool hasSecondJumped = false;
+
+    private int currentAttack;
+    private float lastAttackTime = 0;
+    private float lastStarThrowTime = 0;
 
 	void Awake() {
 		anim = GetComponent<Animator>();
@@ -62,12 +78,14 @@ public class FoxPlayerControl : MonoBehaviour {
         secondJumpBool = Animator.StringToHash("SecondJump");
         canFirstJumpBool = Animator.StringToHash("canFirstJump");
         canSecondJumpBool = Animator.StringToHash("canSecondJump");
+        glideBool = Animator.StringToHash("Glide");
 		hFloat = Animator.StringToHash("H");
 		vFloat = Animator.StringToHash("V");
 		aimBool = Animator.StringToHash("Aim");
+        attackInt = Animator.StringToHash("Attack");
 		
         groundedBool = Animator.StringToHash("Grounded");
-		colliderBound = GetComponent<Collider>().bounds.extents;
+		colliderBound = GetComponent<CapsuleCollider>().bounds.extents;
 	}
 
 	bool IsGrounded() {
@@ -78,9 +96,11 @@ public class FoxPlayerControl : MonoBehaviour {
 		aim = Input.GetButton("Aim");
 		h = Input.GetAxis("Horizontal");
 		v = Input.GetAxis("Vertical");
-		run = Input.GetButton("Run");
+        run = false;// Input.GetButton("Run");
 		sprint = Input.GetButton("Sprint");
         jump = Input.GetButtonDown("Jump");
+        glide = Input.GetButton("Jump");
+        attack = Input.GetButtonDown("Attack");
 		isMoving = Mathf.Abs(h) > 0.1 || Mathf.Abs(v) > 0.1;
 	}
 
@@ -91,8 +111,17 @@ public class FoxPlayerControl : MonoBehaviour {
 		
 		anim.SetBool(groundedBool, IsGrounded());
 
-        anim.applyRootMotion = IsGrounded();
+        if (hasRoot) {
+            anim.applyRootMotion = IsGrounded();
+        }
 
+        if (IsGliding()) {
+            rigidBody.useGravity = false;
+        } else {
+            rigidBody.useGravity = true;
+        }
+
+        CombatManagement();
         MovementManagement(h, v, run, sprint);
         JumpManagement();
 	}
@@ -108,41 +137,61 @@ public class FoxPlayerControl : MonoBehaviour {
         } else {
             anim.SetBool(canSecondJumpBool, true);
         }
+        if (!IsGrounded()) {
+            anim.SetBool(firstJumpBool, true);
+            hasFirstJumped = true;
+            anim.SetBool(canFirstJumpBool, false);
+        } else {
+            anim.SetBool(firstJumpBool, false);
+            hasFirstJumped = false;
+            anim.SetBool(canFirstJumpBool, true);
+        }
     }
 
 	void JumpManagement() {
+        Vector3 forward = transform.TransformDirection(Vector3.forward) * speed;
+        Vector3 forward_constant = transform.TransformDirection(Vector3.forward) * ((speed == 0) ? _runSpeed : speed);
         Vector3 currentVelocity = rigidBody.velocity;
         if (IsGrounded()) { //already jumped and landed
 			anim.SetBool(firstJumpBool, false);
             anim.SetBool(secondJumpBool, false);
+            anim.SetBool(glideBool, false);
             hasFirstJumped = false;
             hasSecondJumped = false;
-            //if (timeToNextJump > 0) {
-            //    timeToNextJump -= Time.deltaTime;
-            //}
 		}
-		if (jump) {
-			//if(speed > 0 && timeToNextJump <= 0 && !aim) {
-            if (IsGrounded() && !hasFirstJumped) { //first jump
+        if (jump) {
+            //if(speed > 0 && timeToNextJump <= 0 && !aim) {
+            if (IsGrounded() && !hasFirstJumped && timeToNextJump <= 0) { //first jump
                 anim.SetBool(firstJumpBool, true);
                 anim.SetBool(groundedBool, false);
                 rigidBody.velocity = new Vector3(currentVelocity.x, _jumpHeight, currentVelocity.z);
-				//timeToNextJump = _jumpCooldown;
+                timeToNextJump = _jumpCooldown;
                 hasFirstJumped = true;
-			} else if (!hasSecondJumped) { //second jump
+            } else if (!hasSecondJumped && timeToNextJump <= 0) { //second jump
                 anim.SetBool(secondJumpBool, true);
-                rigidBody.velocity = new Vector3(currentVelocity.x, _jumpHeight, currentVelocity.z);
-                //timeToNextJump = _jumpCooldown;
+                rigidBody.velocity = new Vector3(forward.x * _baseSpeed, _jumpHeight, forward.z * _baseSpeed);
+                timeToNextJump = _jumpCooldown;
                 hasSecondJumped = true;
             }
-		}
+        }
+        if (IsGliding()) {
+            anim.SetBool(glideBool, true);
+            rigidBody.velocity = new Vector3(forward_constant.x * _baseSpeed, _glideFallSpeed, forward_constant.z * _baseSpeed);
+        } else {
+            anim.SetBool(glideBool, false);
+        }
+        if (timeToNextJump > 0) {
+            timeToNextJump -= Time.deltaTime;
+        }
 	}
 
 	void MovementManagement(float horizontal, float vertical, bool running, bool sprinting) {
 		Rotating(horizontal, vertical);
 
 		if (isMoving) {
-			if (sprinting) {
+			if (Time.time - lastAttackTime < _attackCooldown) {
+                speed = 0;
+            } else if (sprinting) {
 				speed = _sprintSpeed;
 			} else if (running) {
 				speed = _runSpeed;
@@ -155,8 +204,51 @@ public class FoxPlayerControl : MonoBehaviour {
 			speed = 0f;
 			anim.SetFloat(speedFloat, 0f);
 		}
-        rigidBody.AddForce(transform.TransformDirection(Vector3.forward) * speed);
+
+        if (hasRoot) {
+            rigidBody.AddForce(transform.TransformDirection(Vector3.forward) * speed);
+        } else {
+            Vector3 forward = transform.TransformDirection(Vector3.forward) * speed;
+            Vector3 currentVelocity = rigidBody.velocity;
+            if (IsGrounded()) {
+                rigidBody.velocity = new Vector3(forward.x * _baseSpeed, currentVelocity.y, forward.z * _baseSpeed);
+            }
+        }
 	}
+
+    void CombatManagement() {
+        float attackTime = Time.time - lastAttackTime;
+        float throwTime = Time.time - lastStarThrowTime;
+
+        if (attackTime >= _attackCooldown && throwTime >= 0.05f) {
+            anim.SetInteger(attackInt, 0);
+            currentAttack = 0;
+        }
+
+        if (attack && IsGrounded() && !IsAiming()) {
+            if (currentAttack == 0 && attackTime >= _attackCooldown) {
+                anim.SetInteger(attackInt, 1);
+                currentAttack = 1;
+
+                lastAttackTime = Time.time;
+            } else if (currentAttack == 1 && Time.time - lastAttackTime >= (1 / 5) * _attackCooldown) {
+                anim.SetInteger(attackInt, 2);
+                currentAttack = 2;
+
+                lastAttackTime = Time.time;
+            } else if (currentAttack == 2 && Time.time - lastAttackTime >= (1 / 5) * _attackCooldown) {
+                anim.SetInteger(attackInt, 3);
+                currentAttack = 3;
+
+                lastAttackTime = Time.time;
+            }
+        } else if (attack && (IsAiming() || IsGliding())) {
+            anim.SetInteger(attackInt, 4);
+            currentAttack = 4;
+
+            lastStarThrowTime = Time.time;
+        }
+    }
 
 	Vector3 Rotating(float horizontal, float vertical) {
 		Vector3 forward = cameraTransform.TransformDirection(Vector3.forward);
@@ -169,18 +261,23 @@ public class FoxPlayerControl : MonoBehaviour {
 
 		float finalTurnSmoothing;
 
+        targetDirection = forward * vertical + right * horizontal;
+
 		if (IsAiming()) {
-			targetDirection = forward;
+            if (targetDirection == Vector3.zero || Time.time - lastStarThrowTime < 0.1f) {
+                targetDirection = forward;
+            }
 			finalTurnSmoothing = _aimTurnSmoothing;
-		} else {
-			targetDirection = forward * vertical + right * horizontal;
-			finalTurnSmoothing = _turnSmoothing;
-		}
+        } else if (IsGrounded()) {
+            finalTurnSmoothing = _turnSmoothing;
+        } else {
+            finalTurnSmoothing = _airTurnSmoothing;
+        }
 
 		if ((isMoving && targetDirection != Vector3.zero) || IsAiming()) {
 			Quaternion targetRotation = Quaternion.LookRotation(targetDirection, Vector3.up);
 
-            Quaternion newRotation = Quaternion.Slerp(rigidBody.rotation, targetRotation, finalTurnSmoothing * Time.deltaTime);
+            Quaternion newRotation = Quaternion.Lerp(rigidBody.rotation, targetRotation, finalTurnSmoothing * Time.deltaTime);
             rigidBody.MoveRotation(newRotation);
 			lastDirection = targetDirection;
 		}
@@ -206,7 +303,11 @@ public class FoxPlayerControl : MonoBehaviour {
 		return aim;
 	}
 
-	public bool isSprinting() {
+	public bool IsSprinting() {
 		return sprint && !aim && isMoving;
 	}
+
+    public bool IsGliding() {
+        return glide && hasFirstJumped && hasSecondJumped && timeToNextJump <= 0 && !IsGrounded();
+    }
 }
