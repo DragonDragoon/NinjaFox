@@ -69,7 +69,7 @@ public class ThirdPersonOrbitCam : MonoBehaviour {
 			targetCamOffset = camOffset;
 		}
 
-		if (playerControl.isSprinting()) {
+		if (playerControl.IsSprinting()) {
 			targetFOV = sprintFOV;
 		} else {
 			targetFOV = defaultFOV;
