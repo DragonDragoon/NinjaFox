@@ -17,13 +17,19 @@ public class FoxPlayerControl : MonoBehaviour {
 	public float _aimTurnSmoothing = 15.0f;
 	public float _speedDampTime = 0.1f;
 
+    public float _airControl = 0.1f;
+
 	public float _jumpHeight = 5.0f;
     public float _secondJumpHeight = 3.0f;
 	public float _jumpCooldown = 0.3f;
 
     public float _attackCooldown = 0.5f;
 
+    public float _starThrowForce = 10.0f;
+
     public bool hasRoot = false;
+
+    public Rigidbody projectile_star;
 
 	private float timeToNextJump = 0;
 	
@@ -160,7 +166,6 @@ public class FoxPlayerControl : MonoBehaviour {
             hasSecondJumped = false;
 		}
         if (jump) {
-            //if(speed > 0 && timeToNextJump <= 0 && !aim) {
             if (IsGrounded() && !hasFirstJumped && timeToNextJump <= 0) { //first jump
                 anim.SetBool(firstJumpBool, true);
                 anim.SetBool(groundedBool, false);
@@ -212,6 +217,8 @@ public class FoxPlayerControl : MonoBehaviour {
             Vector3 currentVelocity = rigidBody.velocity;
             if (IsGrounded()) {
                 rigidBody.velocity = new Vector3(forward.x * _baseSpeed, currentVelocity.y, forward.z * _baseSpeed);
+            } else {
+                rigidBody.velocity = new Vector3(((1 / currentVelocity.magnitude) * currentVelocity.x + forward.x * _airControl) * _baseSpeed, currentVelocity.y, ((1 / currentVelocity.magnitude) * currentVelocity.z + forward.z * _airControl) * _baseSpeed);
             }
         }
 	}
@@ -242,9 +249,14 @@ public class FoxPlayerControl : MonoBehaviour {
 
                 lastAttackTime = Time.time;
             }
-        } else if (attack && (IsAiming() || IsGliding())) {
+        } else if (attack && (IsAiming() || IsGliding()) && lastStarThrowTime >= (1 / 5) * _attackCooldown) {
+            Vector3 forward = cameraTransform.TransformDirection(Vector3.forward);
+
             anim.SetInteger(attackInt, 4);
             currentAttack = 4;
+
+            Rigidbody star = Instantiate(projectile_star, transform.position + new Vector3(0.0f, 0.8f, 0.0f) + forward * 0.5f, Quaternion.Euler(forward)) as Rigidbody;
+            star.velocity = forward * _starThrowForce;
 
             lastStarThrowTime = Time.time;
         }
