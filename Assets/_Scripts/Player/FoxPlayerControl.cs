@@ -249,7 +249,7 @@ public class FoxPlayerControl : MonoBehaviour {
 
                 lastAttackTime = Time.time;
             }
-        } else if (attack && (IsAiming() || IsGliding()) && lastStarThrowTime >= (1 / 5) * _attackCooldown) {
+        } else if (attack && (IsAiming() || IsGliding()) && Time.time - lastStarThrowTime >= (1 / 5) * _attackCooldown) {
             Vector3 forward = cameraTransform.TransformDirection(Vector3.forward);
 
             anim.SetInteger(attackInt, 4);
